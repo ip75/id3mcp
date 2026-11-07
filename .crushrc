@@ -1,0 +1,26 @@
+# General Application Options
+option metrics false
+option provider-auto-update false
+option request-timeout 6000 
+
+# Add Provider
+provider add neural \
+  --type completions \
+  --base-url "http://neural:11434/v1" \
+  --name "Ollama (neural)" \
+  --discover-models true
+
+# Register Models
+model add neural/qwen3-coder:30b-a3b-q8_0 --name "Qwen3 Coder 30B Q8" --context-window 32768 --default-max-tokens 8192
+model add neural/qwen3-coder:30b --name "Qwen3 Coder 30B Q4" --context-window 32768 --default-max-tokens 8192
+model add neural/qwen2.5-coder:14b --name "Qwen2.5 Coder 14B" --context-window 32768 --default-max-tokens 8192
+model add neural/qwen3:14b --name "Qwen3 14B" --context-window 32768 --default-max-tokens 8192
+model add neural/laguna-xs-2.1:latest --name "Laguna XS 2.1" --context-window 32768 --default-max-tokens 8192
+
+lsp add go --command "gopls"
+
+# Add MCP Servers
+# Add Context7 Remote MCP server to Crush
+mcp add context7 --type http --url "https://context7.com/mcp" --timeout 15 --header Authorization "Bearer ctx7sk-c17801f1-957b-4a30-b17c-abcb87fb15cf"
+
+

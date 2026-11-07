@@ -1,0 +1,77 @@
+﻿{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "disable_metrics": true,
+    "disable_provider_auto_update": true
+  },
+  "providers": {
+    "neural": {
+      "base_url": "http://neural:11434/v1",
+      "models": [
+        {
+          "context_window": 32768,
+          "default_max_tokens": 8192,
+          "id": "qwen3-coder:30b-a3b-q8_0",
+          "name": "Qwen3 Coder 30B Q8",
+          "pricing": {
+            "input": 0,
+            "output": 0
+          }
+        },
+        {
+          "context_window": 32768,
+          "default_max_tokens": 8192,
+          "id": "qwen3-coder:30b",
+          "name": "Qwen3 Coder 30B Q4",
+          "pricing": {
+            "input": 0,
+            "output": 0
+          }
+        },
+        {
+          "context_window": 32768,
+          "default_max_tokens": 8192,
+          "id": "qwen2.5-coder:14b",
+          "name": "Qwen2.5 Coder 14B",
+          "pricing": {
+            "input": 0,
+            "output": 0
+          }
+        },
+        {
+          "context_window": 32768,
+          "default_max_tokens": 8192,
+          "id": "qwen3:14b",
+          "name": "Qwen3 14B",
+          "pricing": {
+            "input": 0,
+            "output": 0
+          }
+        },
+        {
+          "context_window": 32768,
+          "default_max_tokens": 8192,
+          "id": "laguna-xs-2.1:latest",
+          "name": "Laguna XS 2.1",
+          "pricing": {
+            "input": 0,
+            "output": 0
+          }
+        }
+      ],
+      "name": "Ollama (neural)",
+      "type": "openai-compat"
+    }
+  },
+  "mcp": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "C:/llm/MCP/filesystem/filesystem.exe"
+    },
+    "golangci-lint": {
+      "type": "stdio",
+      "command": "C:\\dev\\go\\bin\\golangci-lint-v2.exe",
+      "args": ["run", "--out-format", "json"]
+    }
+  }
+}
