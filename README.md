@@ -25,9 +25,27 @@ The server focuses on safe, local tag editing: it exposes MCP tools for listing 
 - Node.js (for the MCP integration test script)
 - `make` (optional, for convenience targets)
 
-## Build
+## Install
+
+Install the latest tagged release with Go:
 
 ```bash
+go install github.com/ip75/id3mcp@latest
+```
+
+Or install a specific version:
+
+```bash
+go install github.com/ip75/id3mcp@v0.1.0
+```
+
+The `id3mcp` binary will be placed in `$GOBIN` or `$HOME/go/bin` (Windows: `%USERPROFILE%\go\bin`).
+
+## Build from source
+
+```bash
+git clone https://github.com/ip75/id3mcp.git
+cd id3mcp
 go build -o id3mcp.exe .
 ```
 
@@ -44,10 +62,14 @@ make all
 
 `id3mcp` communicates over MCP stdio. Set `ID3MCP_ROOT` to the directory containing MP3 files the server is allowed to access.
 
+If installed via `go install`, make sure your Go bin directory is on `PATH`, or use the full path to the installed binary.
+
 Example (PowerShell):
 
 ```powershell
 $env:ID3MCP_ROOT = "C:\music\work"
+id3mcp
+# or, from a local build:
 .\id3mcp.exe
 ```
 
@@ -55,6 +77,8 @@ Example (bash):
 
 ```bash
 export ID3MCP_ROOT=/path/to/music/work
+id3mcp
+# or, from a local build:
 ./id3mcp
 ```
 
@@ -154,6 +178,5 @@ go vet ./...
 ## Limitations / non-goals
 
 - No audio transcoding or audio content modification.
-- No recursive directory scanning.
 - No archive/library management features; intended for controlled batch edits in a working directory.
 - The project is not a general-purpose tagger UI; it is an MCP server for agents/clients.
