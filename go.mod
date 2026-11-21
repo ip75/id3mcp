@@ -1,4 +1,4 @@
-module id3mcp
+module github.com/ip75/id3mcp
 
 go 1.27.0
 
