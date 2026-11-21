@@ -88,7 +88,7 @@ The process expects an MCP client on stdin/stdout. Logs/errors go to stderr.
 
 Configure your MCP client to launch the binary with `ID3MCP_ROOT` set. The exact config format depends on the client; the important parts are command, args, and environment.
 
-Example shape:
+Generic JSON example:
 
 ```json
 {
@@ -103,6 +103,16 @@ Example shape:
   }
 }
 ```
+
+Crush (`crushrc`) example:
+
+```bash
+mcp add id3mcp \
+  --command "C:\\Users\\IP\\go\\bin\\id3mcp.exe" \
+  --env ID3MCP_ROOT="C:\\music\\work"
+```
+
+If you built from source or placed the binary elsewhere, use that path in `--command`. On Linux/macOS, use the corresponding binary path, e.g. `~/go/bin/id3mcp`.
 
 ## Supported MCP tools
 
