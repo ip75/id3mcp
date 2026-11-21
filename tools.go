@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,7 +35,7 @@ func boolPtr(v bool) *bool { return &v }
 func (a *app) instructions() string {
 	return fmt.Sprintf(`Working directory only %s. Archive music does not belong here.
 First id3_list / id3_read. Then id3_set or id3_set_cover with confirm=false and show diff to person.
-confirm=true writes to disk. No more than %d files per call. No recursion.
+confirm=true writes to disk. No more than %d files per call. id3_list supports recursive=true for subdirectories.
 New file gets ID3v2.3 and UTF-16. UTF-8 is only written in ID3v2.4 (force_version=4 or file already 2.4).
 ID3v2.3 specification does not support UTF-8. Empty string clears field. Don't put cover in text.`, a.cfg.Root, a.cfg.MaxFiles)
 }
@@ -43,7 +44,7 @@ ID3v2.3 specification does not support UTF-8. Empty string clears field. Don't p
 func (a *app) register(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "id3_list",
-		Description: "List .mp3 files in one directory inside working folder. No recursion, no archive.",
+		Description: "List .mp3 files in a directory inside working folder. Set recursive=true to include subdirectories. No archive.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, a.list)
 	mcp.AddTool(server, &mcp.Tool{
@@ -71,19 +72,21 @@ func (a *app) register(server *mcp.Server) {
 
 // ListIn represents input for the id3_list tool.
 type listIn struct {
-	Path string `json:"path" jsonschema:"directory inside working folder, can be dot"`
+	Path      string `json:"path" jsonschema:"directory inside working folder, can be dot"`
+	Recursive bool   `json:"recursive,omitempty" jsonschema:"if true, include .mp3 files from subdirectories"`
 }
 
 // ListOut represents output for the id3_list tool.
 type listOut struct {
 	Root      string   `json:"root"`
 	Dir       string   `json:"dir"`
+	Recursive bool     `json:"recursive"`
 	Files     []string `json:"files"`
 	Truncated bool     `json:"truncated,omitempty"`
 }
 
 // list lists MP3 files in a directory.
-func (a *app) list(ctx context.Context, _ *mcp.CallToolRequest, in listIn) (*mcp.CallToolResult, listOut, error) {
+func (a *app) list(_ context.Context, _ *mcp.CallToolRequest, in listIn) (result *mcp.CallToolResult, out listOut, err error) {
 	j := Jail{a.cfg.Root}
 	dir, err := j.Resolve(in.Path)
 	if err != nil {
@@ -96,26 +99,71 @@ func (a *app) list(ctx context.Context, _ *mcp.CallToolRequest, in listIn) (*mcp
 	if !st.IsDir() {
 		return toolErr[listOut](fmt.Errorf("%s not directory", dir))
 	}
-	entries, err := os.ReadDir(dir)
+	files, truncated, err := a.listMP3Files(j, dir, in.Recursive)
 	if err != nil {
 		return toolErr[listOut](err)
+	}
+	sort.Strings(files)
+	if files == nil {
+		files = []string{}
+	}
+	return toolOK(listOut{Root: a.cfg.Root, Dir: dir, Recursive: in.Recursive, Files: files, Truncated: truncated})
+}
+
+func (a *app) listMP3Files(j Jail, dir string, recursive bool) ([]string, bool, error) {
+	if !recursive {
+		return a.listMP3FilesFlat(j, dir)
+	}
+	var files []string
+	truncated := false
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path != dir {
+			if err := j.inside(path); err != nil {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
+		if d.IsDir() {
+			if path != dir {
+				info, err := os.Lstat(path)
+				if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsDir() {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		rel, ok := a.mp3RelPath(j, path, d)
+		if !ok {
+			return nil
+		}
+		files = append(files, rel)
+		if len(files) >= 200 {
+			truncated = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return files, truncated, nil
+}
+
+func (a *app) listMP3FilesFlat(j Jail, dir string) ([]string, bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, false, err
 	}
 	var files []string
 	truncated := false
 	for _, e := range entries {
-		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".mp3") {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-			continue
-		}
-		full := filepath.Join(dir, e.Name())
-		if _, _, err := j.OpenMP3(full, a.cfg.MaxBytes); err != nil {
-			continue
-		}
-		rel, err := filepath.Rel(a.cfg.Root, full)
-		if err != nil {
+		rel, ok := a.mp3RelPath(j, filepath.Join(dir, e.Name()), e)
+		if !ok {
 			continue
 		}
 		files = append(files, rel)
@@ -124,11 +172,28 @@ func (a *app) list(ctx context.Context, _ *mcp.CallToolRequest, in listIn) (*mcp
 			break
 		}
 	}
-	sort.Strings(files)
-	if files == nil {
-		files = []string{}
+	return files, truncated, nil
+}
+
+func (a *app) mp3RelPath(j Jail, full string, d fs.DirEntry) (string, bool) {
+	if d.IsDir() || !strings.EqualFold(filepath.Ext(d.Name()), ".mp3") {
+		return "", false
 	}
-	return toolOK(listOut{Root: a.cfg.Root, Dir: dir, Files: files, Truncated: truncated})
+	if err := j.inside(full); err != nil {
+		return "", false
+	}
+	info, err := os.Lstat(full)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return "", false
+	}
+	if a.cfg.MaxBytes > 0 && info.Size() > a.cfg.MaxBytes {
+		return "", false
+	}
+	rel, err := filepath.Rel(a.cfg.Root, full)
+	if err != nil {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
 }
 
 // ReadIn represents input for the id3_read tool.

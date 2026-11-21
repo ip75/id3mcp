@@ -14,7 +14,7 @@ func TestCyrillicV23IsUTF16(t *testing.T) {
 	if err := os.WriteFile(path, []byte("audio-bytes-padding!!"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	title := "World"
+	title := "Мир"
 	res, err := applyEdit(path, Patch{Title: &title}, editOpt{Confirm: true, DefaultVersion: 3, StripV1: true})
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +27,7 @@ func TestCyrillicV23IsUTF16(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(raw, []byte{0xFE, 0xFF, 0x04, 0x1C, 0x04, 0x38, 0x04, 0x40}) {
-		t.Fatalf("no UTF-16 for World: %x", raw[:min(80, len(raw))])
+		t.Fatalf("no UTF-16 for Мир: %x", raw[:min(80, len(raw))])
 	}
 	if bytes.Contains(raw, []byte{0xD0, 0x9C, 0xD0, 0xB8, 0xD1, 0x80}) {
 		t.Fatal("UTF-8 written in v2.3")
@@ -49,7 +49,7 @@ func TestForceV24UTF8AndPreviewDoesNotWrite(t *testing.T) {
 	if err := os.WriteFile(path, []byte("audio-bytes-padding!!"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	title := "World"
+	title := "Мир"
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -136,14 +136,14 @@ func TestCoverRoundTripAndJail(t *testing.T) {
 func TestMojibakeRepair(t *testing.T) {
 	raw := []byte{0xD0, 0x9C, 0xD0, 0xB8, 0xD1, 0x80}
 	broken := "\u00d0\u0153\u00d0\u00b8\u00d1\u20ac" // cp1252 view of those UTF-8 bytes
-	if string(raw) != "World" {
+	if string(raw) != "Мир" {
 		t.Fatal(string(raw))
 	}
 	fixed, ok := repairMojibake(broken)
-	if !ok || fixed != "World" {
+	if !ok || fixed != "Мир" {
 		t.Fatalf("ok=%v fixed=%q broken=%q", ok, fixed, broken)
 	}
-	if _, ok := repairMojibake("World"); ok {
+	if _, ok := repairMojibake("Мир"); ok {
 		t.Fatal("real Cyrillic should not be touched")
 	}
 
@@ -167,7 +167,7 @@ func TestMojibakeRepair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.After.Title != "World" || res.Wrote {
+	if res.After.Title != "Мир" || res.Wrote {
 		t.Fatalf("%+v", res)
 	}
 }

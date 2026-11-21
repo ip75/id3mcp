@@ -2,3 +2,15 @@
 id3mcp.exe
 id3mcp
 id3mcp-binary
+.vtcode
+.crush
+id3mcp-freebsd-amd64
+id3mcp-linux-amd64
+id3mcp-windows-amd64.exe
+.agents/skills/index.md
+
+*.id3mcp.bak
+body.json
+body2.json
+_tmp_*
+id3mcp-test.exe

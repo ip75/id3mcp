@@ -1,190 +1,196 @@
 # AGENTS.md
 
-Go-проект: MCP-сервер (stdio) для чтения и редактирования ID3v2-тегов в MP3-файлах.
-Нужно: текстовые поля, обложки (APIC), локализованный текст (разные языки и кодировки), разные версии тега.
+Go project: an MCP server (stdio) for reading and editing ID3v2 tags in MP3 files.
+Scope: text fields, covers (APIC), localized text (different languages and encodings), and different tag versions.
 
-Код, идентификаторы, комментарии, коммиты — по-английски. Этот файл — по-русски, термины стандарта — английские.
-
----
-
-## 0. Главное правило: стандарт — единственный источник истины
-
-Ничего не выдумывать.
-
-- Чего нет в спецификации, того мы не реализуем «как обычно делают другие». Остановиться, записать вопрос в `docs/DECISIONS.md`, спросить владельца.
-- Каждый флаг, поле и ограничение в коде сопровождается комментарием со ссылкой на раздел, например `// ID3v2.4.0 frames §4.14 (APIC)`.
-- Поведение других программ (iTunes, TagLib, mutagen, Windows Explorer) — не аргумент. Их можно использовать только как внешний оракул в тестах (§9).
-- Таблицы кодов (ISO 639-2 и т.п.) не набирать по памяти. Взять из первоисточника и встроить через `go:embed`.
-- Не добавлять фреймы, флаги и «удобные» соглашения, которых нет в спецификациях.
-- Версии API зависимостей не писать по памяти: смотреть `go doc` / pkg.go.dev для версии из `go.mod`.
+Code, identifiers, comments, and commits are in English. This file is in English; standard terms remain in English.
 
 ---
 
-## 1. Спецификации
+## Permissions and Tools
 
-Положить неизменённые копии в `docs/spec/` (лицензия документов разрешает копировать без изменений со ссылкой на оригинал). Перед работой над фреймом открыть его раздел и сверяться с текстом.
+- You may freely edit, create, and delete files inside the current project directory (unless it conflicts with safety rules or touches secrets such as `.env`).
+- You may use all connected MCP tools, terminal, search, and other available tools without unnecessary confirmation when needed to complete the task.
+- Before destructive actions (deleting large amounts of data, resetting git changes, overwriting generated artifacts), be careful and check the task context.
 
-| Документ | Адрес |
+## 0. Main Rule: The Standard Is the Only Source of Truth
+
+Do not invent behavior.
+
+- If something is not in the specification, do not implement it "as others usually do". Stop, record the question in `docs/DECISIONS.md`, and ask the owner.
+- Every flag, field, and constraint in code must be accompanied by a comment with a section reference, e.g. `// ID3v2.4.0 frames §4.14 (APIC)`.
+- Behavior of other programs (iTunes, TagLib, mutagen, Windows Explorer) is not an argument. They may be used only as external oracles in tests (§9).
+- Do not type code tables (ISO 639-2, etc.) from memory. Take them from the primary source and embed via `go:embed`.
+- Do not add frames, flags, or "convenient" conventions that are not in the specifications.
+- Do not write dependency API versions from memory: check `go doc` / pkg.go.dev for the version from `go.mod`.
+
+---
+
+## 1. Specifications
+
+Put unchanged copies in `docs/spec/` (the document license allows copying without changes with a reference to the original). Before working on a frame, open its section and follow the text.
+
+| Document | Address |
 |---|---|
 | ID3v2.3.0 (informal standard, 3 Feb 1999) | https://id3.org/id3v2.3.0 |
 | ID3v2.4.0 Main Structure (1 Nov 2000) | https://id3.org/id3v2.4.0-structure |
 | ID3v2.4.0 Native Frames (1 Nov 2000) | https://id3.org/id3v2.4.0-frames |
-| ID3v2.4.0 Changes (отличия 2.3 → 2.4) | https://id3.org/id3v2.4.0-changes |
-| Chapter Frame Addendum 1.0 (CHAP, CTOC; совместим с 2.3 и 2.4) | https://id3.org/Developer%20Information |
-| Accessibility Addendum 1.0 (ATXT; совместим с 2.3 и 2.4) | https://id3.org/Developer%20Information |
-| ID3v2.2.0 — устарел, заменён 2.3.0 | https://id3.org/id3v2-00 |
+| ID3v2.4.0 Changes (differences 2.3 → 2.4) | https://id3.org/id3v2.4.0-changes |
+| Chapter Frame Addendum 1.0 (CHAP, CTOC; compatible with 2.3 and 2.4) | https://id3.org/Developer%20Information |
+| Accessibility Addendum 1.0 (ATXT; compatible with 2.3 and 2.4) | https://id3.org/Developer%20Information |
+| ID3v2.2.0 — obsolete, replaced by 2.3.0 | https://id3.org/id3v2-00 |
 
-**Что считать «самым новым стандартом».** На 2026-11-04 это ID3v2.4.0 (1 ноября 2000, «informal standard»). Более новой основной версии на id3.org нет. После 2.4.0 вышли только дополнения (chapters, accessibility). Проверять раз в полгода: https://id3.org/Developer%20Information.
-
----
-
-## 2. Область работ
-
-Обязательно:
-- Чтение тегов 2.3 и 2.4; запись в 2.3 и 2.4.
-- Текстовые фреймы (T***, TXXX), URL-фреймы (W***, WXXX), COMM, USLT, APIC.
-- Любые символы Unicode в тексте через правильные кодировки (§5).
-- Несколько языков через фреймы с полем Language (§6).
-- Обложки: добавить, заменить, извлечь, удалить (§7).
-- Сохранение всех неизвестных фреймов при правке (§8).
-
-Позже, только после решения владельца: SYLT, POPM, PCNT, UFID, PRIV, GEOB, CHAP/CTOC, ID3v2.2, дополнения.
-
-Вне области: изменение аудиоданных; ID3v1 (читать и сохранять как есть, не менять без явной просьбы); ID3v2-теги внутри не-MP3 контейнеров.
+**What counts as "the newest standard".** As of 2026-11-04 this is ID3v2.4.0 (1 November 2000, "informal standard"). There is no newer main version on id3.org. After 2.4.0 only addenda were released (chapters, accessibility). Check every six months: https://id3.org/Developer%20Information.
 
 ---
 
-## 3. Структура проекта (предложение; если в репозитории уже есть структура — следовать ей)
+## 2. Scope
+
+Required:
+- Read tags 2.3 and 2.4; write 2.3 and 2.4.
+- Text frames (T***, TXXX), URL frames (W***, WXXX), COMM, USLT, APIC.
+- Any Unicode characters in text via correct encodings (§5).
+- Multiple languages via frames with a Language field (§6).
+- Covers: add, replace, extract, delete (§7).
+- Preserve all unknown frames when editing (§8).
+
+Later, only after owner decision: SYLT, POPM, PCNT, UFID, PRIV, GEOB, CHAP/CTOC, ID3v2.2, addenda.
+
+Out of scope: changing audio data; ID3v1 (read and preserve as-is, do not change without explicit request); ID3v2 tags inside non-MP3 containers.
+
+---
+
+## 3. Project Structure (proposal; if the repo already has structure, follow it)
 
 ```
-cmd/server/main.go        // только запуск MCP по stdio
-internal/id3v2/           // кодек тега, не знает про MCP
-    header.go             // заголовок, extended header, footer, synchsafe, unsync
-    frame.go              // заголовок фрейма, флаги (по версиям!)
-    text.go               // кодировки, терминаторы, multi-string
+cmd/server/main.go        // only MCP stdio startup
+internal/id3v2/           // tag codec, knows nothing about MCP
+    header.go             // header, extended header, footer, synchsafe, unsync
+    frame.go              // frame header, flags (by version!)
+    text.go               // encodings, terminators, multi-string
     frames_text.go        // T***, TXXX, W***, WXXX
     frames_comm.go        // COMM, USLT
     frames_apic.go        // APIC
     convert.go            // 2.3 <-> 2.4
-    validate.go           // уникальность, форматы значений
-    file.go               // поиск тега в файле, замена тега, atomic write
-internal/mcpserver/       // описание tools, валидация входа, вызов id3v2
-docs/spec/                // копии спецификаций
-docs/DECISIONS.md         // журнал решений и вопросов к владельцу
-testdata/                 // маленькие эталонные файлы
+    validate.go           // uniqueness, value formats
+    file.go               // tag lookup in file, tag replacement, atomic write
+internal/mcpserver/       // tool descriptions, input validation, id3v2 calls
+docs/spec/                // specification copies
+docs/DECISIONS.md         // decision/question log for owner
+testdata/                 // small reference files
 ```
 
-Правила:
-- `internal/id3v2` не импортирует MCP и не пишет в stdout.
-- MCP по stdio: **stdout зарезервирован под JSON-RPC**. Логи — только в stderr (`log` с `os.Stderr`). Никаких `fmt.Println`.
-- SDK: официальный `github.com/modelcontextprotocol/go-sdk`, транспорт stdio. Зависимости: SDK и стандартная библиотека. `golang.org/x/text` — только для опционального чтения Windows-1251 (§5.5). Новые зависимости только с разрешения владельца.
+Rules:
+- `internal/id3v2` must not import MCP and must not write to stdout.
+- MCP over stdio: **stdout is reserved for JSON-RPC**. Logs go only to stderr (`log` with `os.Stderr`). No `fmt.Println`.
+- SDK: official `github.com/modelcontextprotocol/go-sdk`, stdio transport. Dependencies: SDK and standard library. `golang.org/x/text` only for optional Windows-1251 reading (§5.5). New dependencies only with owner permission.
 
 ---
 
-## 4. Шпаргалка по версиям (проверено по спецификациям)
+## 4. Version Cheat Sheet (verified against specs)
 
-Парсеры и писатели 2.3 и 2.4 **раздельные**: биты флагов и размеры кодируются по-разному. Нельзя переиспользовать разбор флагов между версиями.
+2.3 and 2.4 parsers/writers are **separate**: flag bits and sizes are encoded differently. Do not reuse flag parsing between versions.
 
-| Аспект | 2.3.0 | 2.4.0 |
+| Aspect | 2.3.0 | 2.4.0 |
 |---|---|---|
-| Заголовок тега | `"ID3" $03 00`, флаги `%abc00000`: a unsync (бит 7), b ext header (бит 6), c experimental (бит 5) | `"ID3" $04 00`, флаги `%abcd0000`: те же + d footer (бит 4) |
-| Размер тега | 4 байта synchsafe (28 бит), без 10-байтного заголовка, включая ext header и padding, после unsync | 4 байта synchsafe; = ext header + padding + frames после unsync; total−10, или total−20 при footer |
-| Extended header | размер 4 байта обычным числом (6 или 10), флаги 2 байта (`%x0000000 00000000`, x = CRC), размер padding 4 байта, CRC-32 4 байта | размер synchsafe, `$01` + 1 байт флагов `%0bcd0000` (b update, c CRC, d restrictions), у каждого флага байт длины данных |
-| Footer | нет | `"3DI"` + копия заголовка; **обязателен** для тега в конце файла; padding вместе с footer запрещён |
-| Unsynchronisation | на весь тег (включая ext header), флаг в заголовке тега | на уровне фрейма (флаг `n`); флаг в заголовке тега ставят только если все фреймы unsynced |
-| Размер фрейма | 4 байта big-endian, обычное число, без 10-байтного заголовка | synchsafe 32 бит, без заголовка, размер после compression/encryption/unsync |
-| Флаги фрейма | `%abc00000 %ijk00000`: a tag-alter, b file-alter, c read-only; i compression, j encryption, k grouping | `%0abc0000 %0h00kmnp`: a, b, c те же, но в другой позиции; h grouping, k compression, m encryption, n unsync, p data length indicator |
-| Доп. поля после заголовка фрейма | по порядку флагов: 4 байта размера до сжатия (i), 1 байт метода шифрования (j), 1 байт группы (k) | по порядку флагов (§4.1.2); сжатие требует Data Length Indicator (synchsafe) |
-| Кодировки | `$00` ISO-8859-1; `$01` Unicode UCS-2 с BOM | `$00` ISO-8859-1; `$01` UTF-16 с BOM; `$02` UTF-16BE без BOM; `$03` UTF-8 |
-| Несколько значений в T-фрейме | разделитель `/` у TCOM, TEXT, TOLY, TOPE, TPE1 | список строк с разделителем-терминатором кодировки |
-| Дата/время | TYER (`YYYY`), TDAT (`DDMM`), TIME (`HHMM`), TRDA, TORY | TDRC, TDOR, TDRL, TDEN, TDTG — подмножество ISO 8601, всегда UTC |
-| Список участников | IPLS | TMCL (инструмент ↔ музыкант), TIPL (роль ↔ имя) |
-| Громкость / EQ | RVAD, EQUA | RVA2, EQU2 |
-| TCON | `(21)Eurodisco`, `(RX)`, `(CR)`, экранирование `((` | числа строкой и/или свободный текст: `"21" $00 "Eurodisco"`; слова `RX`, `CR` |
-| USER | один на тег | один на язык |
+| Tag header | `"ID3" $03 00`, flags `%abc00000`: a unsync (bit 7), b ext header (bit 6), c experimental (bit 5) | `"ID3" $04 00`, flags `%abcd0000`: same + d footer (bit 4) |
+| Tag size | 4 bytes synchsafe (28 bits), excluding 10-byte header, including ext header and padding, after unsync | 4 bytes synchsafe; = ext header + padding + frames after unsync; total−10, or total−20 with footer |
+| Extended header | size 4 bytes normal integer (6 or 10), flags 2 bytes (`%x0000000 00000000`, x = CRC), padding size 4 bytes, CRC-32 4 bytes | size synchsafe, `$01` + 1 byte flags `%0bcd0000` (b update, c CRC, d restrictions), each flag has data length byte |
+| Footer | none | `"3DI"` + header copy; **required** for a tag at end of file; padding with footer is forbidden |
+| Unsynchronisation | whole tag (including ext header), flag in tag header | frame level (flag `n`); tag header flag set only if all frames are unsynced |
+| Frame size | 4 bytes big-endian, normal integer, excluding 10-byte header | synchsafe 32 bits, excluding header, size after compression/encryption/unsync |
+| Frame flags | `%abc00000 %ijk00000`: a tag-alter, b file-alter, c read-only; i compression, j encryption, k grouping | `%0abc0000 %0h00kmnp`: a, b, c same but different position; h grouping, k compression, m encryption, n unsync, p data length indicator |
+| Extra fields after frame header | in flag order: 4 bytes decompressed size (i), 1 byte encryption method (j), 1 byte group (k) | in flag order (§4.1.2); compression requires Data Length Indicator (synchsafe) |
+| Encodings | `$00` ISO-8859-1; `$01` Unicode UCS-2 with BOM | `$00` ISO-8859-1; `$01` UTF-16 with BOM; `$02` UTF-16BE without BOM; `$03` UTF-8 |
+| Multiple values in T-frame | `/` separator for TCOM, TEXT, TOLY, TOPE, TPE1 | string list with encoding terminator separator |
+| Date/time | TYER (`YYYY`), TDAT (`DDMM`), TIME (`HHMM`), TRDA, TORY | TDRC, TDOR, TDRL, TDEN, TDTG — ISO 8601 subset, always UTC |
+| Involved people list | IPLS | TMCL (instrument ↔ musician), TIPL (role ↔ name) |
+| Volume / EQ | RVAD, EQUA | RVA2, EQU2 |
+| TCON | `(21)Eurodisco`, `(RX)`, `(CR)`, escaping `((` | numeric string and/or free text: `"21" $00 "Eurodisco"`; words `RX`, `CR` |
+| USER | one per tag | one per language |
 | SYLT content type | `$00`–`$06` | `$00`–`$08` |
-| Описание APIC | не длиннее 64 символов | ограничение в тексте не указано |
-| Padding | нули после последнего фрейма | то же, но запрещён между фреймами и при наличии footer |
+| APIC description | no longer than 64 characters | no explicit limit in text |
+| Padding | zeros after last frame | same, but forbidden between frames and when footer is present |
 
-Устарели в 2.4 (заменены): EQUA→EQU2, IPLS→TMCL+TIPL, RVAD→RVA2, TDAT/TIME/TRDA/TYER→TDRC, TORY→TDOR, TSIZ — отменён без замены.
-Новые в 2.4: ASPI, EQU2, RVA2, SEEK, SIGN, TDEN, TDOR, TDRC, TDRL, TDTG, TIPL, TMCL, TMOO, TPRO, TSOA, TSOP, TSOT, TSST.
+Obsolete in 2.4 (replaced): EQUA→EQU2, IPLS→TMCL+TIPL, RVAD→RVA2, TDAT/TIME/TRDA/TYER→TDRC, TORY→TDOR, TSIZ — removed without replacement.
+New in 2.4: ASPI, EQU2, RVA2, SEEK, SIGN, TDEN, TDOR, TDRC, TDRL, TDTG, TIPL, TMCL, TMOO, TPRO, TSOA, TSOP, TSOT, TSST.
 
-Тестовые векторы прямо из спецификаций:
-- 2.3 §3.1: размер тега 257 байт кодируется `$00 00 02 01`.
-- 2.4 §6.2: 255 как 16-битный synchsafe = 383 = `%00000001 01111111`.
+Test vectors directly from specifications:
+- 2.3 §3.1: tag size 257 bytes is encoded `$00 00 02 01`.
+- 2.4 §6.2: 255 as 16-bit synchsafe = 383 = `%00000001 01111111`.
 - Unsync: `$FF %111xxxxx` → `$FF $00 %111xxxxx`; `$FF $00` → `$FF $00 $00`.
 
-Детекция тега: `$49 44 33 yy yy xx zz zz zz zz`, где `yy < $FF`, `zz < $80`. Версия и ревизия никогда не `$FF`. Если major version больше поддерживаемой, тег игнорировать целиком, не пытаться разбирать.
+Tag detection: `$49 44 33 yy yy xx zz zz zz zz`, where `yy < $FF`, `zz < $80`. Version and revision are never `$FF`. If major version is greater than supported, ignore the entire tag; do not attempt to parse it.
 
-Frame ID: только `A-Z` и `0-9`, 4 символа. Идентификаторы на X, Y, Z — экспериментальные: читать и сохранять, самим не создавать.
+Frame ID: only `A-Z` and `0-9`, 4 characters. Identifiers starting with X, Y, Z are experimental: read and preserve, never create.
 
 ---
 
-## 5. Текст и кодировки
+## 5. Text and Encodings
 
-### 5.1 Что можно писать
+### 5.1 What Can Be Written
 
-| Версия тега | Допустимые байты кодировки |
+| Tag version | Allowed encoding bytes |
 |---|---|
-| 2.3 | `$00` ISO-8859-1, `$01` UTF-16 с BOM. **Никогда не писать `$02` и `$03` в тег 2.3.** |
+| 2.3 | `$00` ISO-8859-1, `$01` UTF-16 with BOM. **Never write `$02` or `$03` in a 2.3 tag.** |
 | 2.4 | `$00`, `$01`, `$02`, `$03` |
 
-### 5.2 Выбор кодировки при записи (по умолчанию; параметр `encoding` может переопределить в рамках §5.1)
+### 5.2 Encoding Selection on Write (default; `encoding` parameter may override within §5.1)
 
-1. Строка целиком в диапазоне ISO-8859-1 (символы `$20`–`$FF`, `$0A` там, где перевод строки разрешён) → `$00`.
-2. Иначе, тег 2.3 → `$01` (UTF-16 LE с BOM `FF FE`).
-3. Иначе, тег 2.4 → `$03` (UTF-8).
+1. If the string is entirely in ISO-8859-1 range (characters `$20`–`$FF`, `$0A` where newline is allowed) → `$00`.
+2. Otherwise, tag 2.3 → `$01` (UTF-16 LE with BOM `FF FE`).
+3. Otherwise, tag 2.4 → `$03` (UTF-8).
 
-Правила:
-- Windows-1252 и ISO-8859-1 — не одно и то же: «€», «“”» и т.п. вне ISO-8859-1.
-- **Кириллицу никогда не писать байтами в `$00`.** `$00` — это ISO-8859-1.
-- Числовые строки (TRCK, TPOS, TBPM, TLEN, TDLY и т.п.) и URL всегда в `$00`. Так сказано в обеих версиях для numeric strings и URLs.
-- URL: только ASCII/ISO-8859-1. Нелатинские адреса — percent-encoding или punycode, самостоятельно не «исправлять»: возвращать ошибку валидации.
-- В тегах 2.3 символы вне BMP непредставимы в UCS-2: по умолчанию вернуть ошибку и предложить 2.4.
+Rules:
+- Windows-1252 and ISO-8859-1 are not the same: "€", "“”", etc. are outside ISO-8859-1.
+- **Never write Cyrillic as bytes in `$00`.** `$00` is ISO-8859-1.
+- Numeric strings (TRCK, TPOS, TBPM, TLEN, TDLY, etc.) and URLs are always in `$00`. This is stated in both versions for numeric strings and URLs.
+- URL: only ASCII/ISO-8859-1. Non-Latin addresses must be percent-encoded or punycode; do not "fix" them automatically: return a validation error.
+- In 2.3 tags, characters outside BMP cannot be represented in UCS-2: by default return an error and suggest 2.4.
 
 ### 5.3 UTF-16
 
-- `$01`: BOM обязателен (`FF FE` или `FE FF`); **все строки одного фрейма в одном порядке байт** (2.4 §4); терминатор `$00 00`.
-- `$02`: UTF-16BE без BOM, терминатор `$00 00`.
-- Пустая строка с терминатором в `$01` может быть записана как BOM + `$00 00`.
-- Терминатор для `$00` и `$03` — один `$00`.
+- `$01`: BOM is required (`FF FE` or `FE FF`); **all strings in one frame use the same byte order** (2.4 §4); terminator `$00 00`.
+- `$02`: UTF-16BE without BOM, terminator `$00 00`.
+- An empty string with terminator in `$01` may be written as BOM + `$00 00`.
+- Terminator for `$00` and `$03` is one `$00`.
 
-### 5.4 Перевод строки и спецсимволы
+### 5.4 Newlines and Special Characters
 
-- Перевод строки разрешён только там, где в описании фрейма `<full text string>`: COMM (текст), USLT, USER и т.п. Везде остальное — запрещён. В ISO-8859-1 это `$0A`.
-- Внутри значения не должно быть NUL: он зарезервирован как терминатор / разделитель.
+- Newline is allowed only where the frame description says `<full text string>`: COMM (text), USLT, USER, etc. Everywhere else it is forbidden. In ISO-8859-1 it is `$0A`.
+- There must be no NUL inside a value: it is reserved as terminator/separator.
 
-### 5.5 Чтение (толерантность)
+### 5.5 Reading (Tolerance)
 
-- Читать строго по байту кодировки. Невалидные последовательности → заменять на U+FFFD и возвращать предупреждение, не падать.
-- Только по явному параметру `legacy_charset` (например `windows-1251`) разрешено трактовать байты `$00`-строк в этой кодировке. Это не стандарт, на запись не влияет, по умолчанию выключено. Писать такие строки обратно как `$00` запрещено: при сохранении перекодировать в допустимую кодировку (§5.2).
-- Часть реальных писателей нарушает стандарт (например, размеры фреймов 2.4 не в synchsafe). Допустимо на чтение угадывать, но запись всегда строго по спецификации. Каждую такую толерантность выделять комментарием `// NON-STANDARD tolerance (read only)`.
-
----
-
-## 6. Локализация
-
-Что даёт стандарт:
-- Любой T-фрейм, COMM, USLT и др. хранит Unicode через байт кодировки (§5).
-- Фреймы с полем **Language** (3 байта, ISO-639-2, строчными; если язык неизвестен — `"XXX"`, 2.4 §4): COMM, USLT, SYLT, USER.
-- В одном теге может быть несколько COMM / USLT / SYLT. Уникальна пара **(language, content descriptor)**.
-- TLAN — язык(и) текста песни в аудио, трёхбуквенные коды ISO-639-2 (в 2.4 через разделитель, например `"eng" $00 "sve" $00`).
-- Только 2.4: TSOP, TSOA, TSOT — строки для сортировки вместо исполнителя / альбома / названия.
-
-Чего стандарт **не** даёт:
-- Для T-фреймов нет вариантов «по языкам». TIT2, TPE1, TALB и другие T-фреймы — по одному на тег. «Название по-русски» и «название по-английски» в двух TIT2 хранить нельзя.
-- Не придумывать замены (TXXX с самодельными описаниями и т.п.) без решения владельца. Инструмент должен вернуть понятную ошибку: «ID3v2 не определяет локализованные варианты фрейма TIT2; допустимо: …», и перечислить то, что в стандарте есть.
-
-Про коды языков:
-- Стандарт говорит «ISO-639-2», не уточняя вариант B/T (библиографический / терминологический). Принимать оба, хранить как получено, ничего не конвертировать.
-- Проверять по встроенной таблице ISO 639-2 (скачать с Library of Congress, `go:embed`). Неизвестный код → ошибка. Всегда нижний регистр.
-- Язык — это язык содержимого. Кодировка — способ записи символов. Эти параметры независимы.
+- Read strictly by the encoding byte. Invalid sequences → replace with U+FFFD and return a warning, do not crash.
+- Only by explicit `legacy_charset` parameter (e.g. `windows-1251`) is it allowed to treat `$00`-string bytes in that encoding. This is not standard, does not affect writing, and is off by default. Writing such strings back as `$00` is forbidden: on save, re-encode into an allowed encoding (§5.2).
+- Some real writers violate the standard (e.g. 2.4 frame sizes not in synchsafe). It is acceptable to guess on read, but writes must always be strict per spec. Mark each such tolerance with `// NON-STANDARD tolerance (read only)`.
 
 ---
 
-## 7. Обложки (APIC)
+## 6. Localization
 
-Структура (2.3 §4.15, 2.4 §4.14):
+What the standard provides:
+- Any T-frame, COMM, USLT, etc. stores Unicode via the encoding byte (§5).
+- Frames with a **Language** field (3 bytes, ISO-639-2, lowercase; if language is unknown — `"XXX"`, 2.4 §4): COMM, USLT, SYLT, USER.
+- One tag may contain multiple COMM / USLT / SYLT. The pair **(language, content descriptor)** is unique.
+- TLAN — language(s) of song text in audio, three-letter ISO-639-2 codes (in 2.4 via separator, e.g. `"eng" $00 "sve" $00`).
+- 2.4 only: TSOP, TSOA, TSOT — sort strings instead of artist / album / title.
+
+What the standard **does not** provide:
+- T-frames have no language variants. TIT2, TPE1, TALB, and other T-frames are one per tag. You cannot store "Russian title" and "English title" in two TIT2 frames.
+- Do not invent replacements (TXXX with custom descriptions, etc.) without owner decision. The tool must return a clear error: "ID3v2 does not define localized variants of frame TIT2; allowed: ...", and list what the standard does allow.
+
+About language codes:
+- The standard says "ISO-639-2" without specifying B/T variant (bibliographic/terminological). Accept both, store as received, do not convert.
+- Validate against an embedded ISO 639-2 table (download from Library of Congress, `go:embed`). Unknown code → error. Always lowercase.
+- Language is the language of content. Encoding is the way characters are written. These parameters are independent.
+
+---
+
+## 7. Covers (APIC)
+
+Structure (2.3 §4.15, 2.4 §4.14):
 ```
 Text encoding  $xx
 MIME type      <ISO-8859-1 string> $00
@@ -193,105 +199,105 @@ Description    <string per encoding> $00 (00)
 Picture data   <binary>
 ```
 
-Правила:
-- MIME: для совместимости `image/png` или `image/jpeg`. Всегда писать полное имя (спецификация допускает опустить `image/`, нам это не нужно).
-- Определять формат по сигнатуре (PNG `89 50 4E 47 0D 0A 1A 0A`, JPEG `FF D8 FF`) и сверять с заявленным MIME. Несовпадение — ошибка, не угадывание.
-- Байты изображения не перекодировать, не ресайзить, не обрезать.
-- Picture type: `$03` Cover (front) — по умолчанию; `$04` Cover (back); полный список `$00`–`$14` в 2.3 §4.15 / 2.4 §4.14.
-- Не более одной картинки с типом `$01` (32×32 PNG file icon) и не более одной с типом `$02`.
-- Уникальность APIC: по content descriptor (Description). Две картинки с одинаковым описанием в одном теге недопустимы.
-- Описание в тегах 2.3: не более 64 символов.
-- Ссылка вместо данных: MIME `-->` и полный URL. Читать поддерживаем; писать только по явному запросу (в стандарте: «sparingly»).
-- Источник картинки для tools: путь к локальному файлу или base64. **Никаких URL-загрузок** (SSRF). Ограничить размер (задать в конфиге; значение по умолчанию согласовать с владельцем).
-- Размерные пределы формата: размер тега до 256 МБ (28 бит); фрейм 2.4 тоже synchsafe 28 бит. Проверять до записи.
+Rules:
+- MIME: for compatibility `image/png` or `image/jpeg`. Always write the full name (spec allows omitting `image/`; we don't need that).
+- Detect format by signature (PNG `89 50 4E 47 0D 0A 1A 0A`, JPEG `FF D8 FF`) and compare with declared MIME. Mismatch is an error, not a guess.
+- Do not re-encode, resize, or crop image bytes.
+- Picture type: `$03` Cover (front) by default; `$04` Cover (back); full list `$00`–`$14` in 2.3 §4.15 / 2.4 §4.14.
+- No more than one picture with type `$01` (32×32 PNG file icon) and no more than one with type `$02`.
+- APIC uniqueness: by content descriptor (Description). Two pictures with the same description in one tag are not allowed.
+- Description in 2.3 tags: no more than 64 characters.
+- Link instead of data: MIME `-->` and full URL. Reading supported; writing only by explicit request (spec: "sparingly").
+- Image source for tools: local file path or base64. **No URL downloads** (SSRF). Limit size (set in config; agree default with owner).
+- Format size limits: tag size up to 256 MB (28 bits); 2.4 frame also synchsafe 28 bits. Check before writing.
 
 ---
 
-## 8. Правка существующего тега
+## 8. Editing an Existing Tag
 
-1. Версия: при правке существующего тега сохранять его версию, если не запрошена конвертация. Для нового тега — **2.4** (по требованию владельца писать по самому свежему стандарту), параметр `version` может выбрать 2.3.
-2. Неизвестные и неподдерживаемые фреймы: переносить побайтно, как были. Исключение: бит «tag alter preservation» = 1 (2.3: бит a в 1-м байте флагов; 2.4: бит a в `%0abc0000`) означает, что фрейм при изменении тега отбрасывается.
-3. Фреймы с флагами read-only, encryption, grouping не изменять. Сообщить пользователю.
-4. Сжатые фреймы (zlib) читать; при правке пересобирать без сжатия; шифрованные не трогать.
-5. Уникальность перед записью (иначе ошибка, а не «молчаливая замена»):
+1. Version: when editing an existing tag, preserve its version unless conversion is requested. For a new tag — **2.4** (owner requirement to write by the newest standard), `version` parameter may select 2.3.
+2. Unknown and unsupported frames: carry over byte-for-byte as they were. Exception: "tag alter preservation" bit = 1 (2.3: bit a in flags byte 1; 2.4: bit a in `%0abc0000`) means the frame is discarded when tag is changed.
+3. Frames with read-only, encryption, grouping flags must not be changed. Inform the user.
+4. Compressed frames (zlib) can be read; when editing, rebuild without compression; encrypted frames must not be touched.
+5. Uniqueness before write (otherwise error, not "silent replacement"):
 
-| Фрейм | Ограничение |
+| Frame | Constraint |
 |---|---|
-| T*** (кроме TXXX) | один на тег |
-| TXXX, WXXX | один на description |
-| W*** (кроме WXXX) | один на тег, кроме WCOM и WOAR: несколько, но не с одинаковым содержимым |
-| COMM, USLT, SYLT | один на (language, descriptor) |
-| USER | 2.3: один на тег; 2.4: один на язык |
-| APIC | один на description; типы `$01`, `$02` — не более одного |
-| UFID | один на owner identifier (не пустой), идентификатор до 64 байт |
-| IPLS (2.3) | один на тег |
-| PRIV | несколько, но с разным содержимым |
+| T*** (except TXXX) | one per tag |
+| TXXX, WXXX | one per description |
+| W*** (except WXXX) | one per tag, except WCOM and WOAR: multiple, but not with identical content |
+| COMM, USLT, SYLT | one per (language, descriptor) |
+| USER | 2.3: one per tag; 2.4: one per language |
+| APIC | one per description; types `$01`, `$02` — no more than one |
+| UFID | one per owner identifier (not empty), identifier up to 64 bytes |
+| IPLS (2.3) | one per tag |
+| PRIV | multiple, but with different content |
 
-6. Форматы значений (проверять при записи):
-   - TRCK, TPOS: цифры, опционально `/` и цифры (`"4/9"`).
-   - TBPM, TLEN, TDLY: только цифры. TLEN и TDLY в миллисекундах.
-   - TKEY: не более 3 символов. TSRC: 12 символов (ISRC).
-   - TCOP: начинается с года и пробела.
-   - TLAN: коды ISO-639-2.
-   - 2.4 timestamps (TDRC и др.): `yyyy`, `yyyy-MM`, `yyyy-MM-dd`, `yyyy-MM-ddTHH`, `yyyy-MM-ddTHH:mm`, `yyyy-MM-ddTHH:mm:ss`, всё UTC.
-   - 2.3 TYER: 4 цифры; TDAT: `DDMM`; TIME: `HHMM`.
-   - TCON: см. таблицу в §4. Номера жанров из ID3v1: `0`–`79` определены в обеих спецификациях; `80`–`125` в приложении 2.3 помечены как расширения Winamp.
-7. Конвертация версий. Делать только по таблице отличий (§4) и документу «id3v2.4.0-changes»:
-   - 2.3 → 2.4: TYER+TDAT+TIME → TDRC; TORY → TDOR; кодировка `$01` остаётся допустимой; `/`-списки в TCOM, TEXT, TOLY, TOPE, TPE1 → список строк.
-   - 2.4 → 2.3: TDRC → TYER (+TDAT, TIME, если есть в значении); TDOR → TORY; кодировки `$02`, `$03` → `$01`; список строк → `/` для фреймов из §4.
-   - Всё, что спецификация не определяет (IPLS ↔ TIPL/TMCL, TDRL, TDEN, TDTG, RVAD ↔ RVA2, EQUA ↔ EQU2, ASPI, SEEK, SIGN, неизвестные фреймы), **не конвертировать молча**: вернуть пользователю список потерь и ждать решения. До решения такой фрейм остаётся только в исходной версии (`dry_run` покажет это).
-8. Padding: писать нулевой padding разумного размера, чтобы последующие правки умещались без перезаписи аудио (в 2.4 padding запрещён при footer). Если последний байт последнего фрейма `$FF` и нет padding/footer — добавить padding (иначе ложная синхронизация, 2.4 §6.1).
-9. Unsynchronisation при записи по умолчанию **не применять**. Парсер обязан уметь оба варианта: в 2.3 сначала обратить unsync по всему тегу, в 2.4 — по каждому фрейму с флагом `n`.
-
----
-
-## 9. Работа с файлами
-
-- Искать тег: сначала в начале файла (`ID3`), затем footer `3DI` с конца файла (перед ID3v1, если он есть), SEEK, если встретился. Если найдено несколько тегов, действовать по 2.4 §5; старый тег отбрасывается, если у нового нет флага update.
-- Записывать только через временный файл в той же папке + `os.Rename`. Если новый тег помещается в старый размер (кадры + padding), аудио не переписывать, менять только область тега.
-- Аудиоданные копировать потоком, байт в байт. После записи: заново разобрать результат и убедиться, что SHA-256 аудиообласти до и после совпадает.
-- ID3v1 (128 байт `TAG` в конце файла) не менять без явной просьбы.
-- Windows: пути через `filepath`; закрывать файлы до `os.Rename`; файл, открытый другой программой, может не переименоваться — вернуть понятную ошибку и не оставлять временный файл.
-- Пути из MCP-вызовов проверять (`filepath.Clean`, разрешённые корневые каталоги из конфигурации, запрет выхода за них).
+6. Value formats (validate on write):
+   - TRCK, TPOS: digits, optionally `/` and digits (`"4/9"`).
+   - TBPM, TLEN, TDLY: digits only. TLEN and TDLY in milliseconds.
+   - TKEY: no more than 3 characters. TSRC: 12 characters (ISRC).
+   - TCOP: starts with year and space.
+   - TLAN: ISO-639-2 codes.
+   - 2.4 timestamps (TDRC, etc.): `yyyy`, `yyyy-MM`, `yyyy-MM-dd`, `yyyy-MM-ddTHH`, `yyyy-MM-ddTHH:mm`, `yyyy-MM-ddTHH:mm:ss`, all UTC.
+   - 2.3 TYER: 4 digits; TDAT: `DDMM`; TIME: `HHMM`.
+   - TCON: see table in §4. ID3v1 genre numbers: `0`–`79` defined in both specs; `80`–`125` in 2.3 appendix marked as Winamp extensions.
+7. Version conversion. Do only by the differences table (§4) and "id3v2.4.0-changes" document:
+   - 2.3 → 2.4: TYER+TDAT+TIME → TDRC; TORY → TDOR; encoding `$01` remains allowed; `/` lists in TCOM, TEXT, TOLY, TOPE, TPE1 → string list.
+   - 2.4 → 2.3: TDRC → TYER (+TDAT, TIME if present in value); TDOR → TORY; encodings `$02`, `$03` → `$01`; string list → `/` for frames from §4.
+   - Everything not defined by the spec (IPLS ↔ TIPL/TMCL, TDRL, TDEN, TDTG, RVAD ↔ RVA2, EQUA ↔ EQU2, ASPI, SEEK, SIGN, unknown frames) **must not be converted silently**: return a loss report to the user and wait for decision. Until decision, such a frame remains only in the source version (`dry_run` will show this).
+8. Padding: write zero padding of reasonable size so subsequent edits fit without rewriting audio (in 2.4 padding is forbidden with footer). If the last byte of the last frame is `$FF` and there is no padding/footer — add padding (otherwise false synchronisation, 2.4 §6.1).
+9. Unsynchronisation on write is **not applied by default**. Parser must handle both variants: in 2.3 first reverse unsync over whole tag, in 2.4 — per frame with flag `n`.
 
 ---
 
-## 10. MCP: набор инструментов (предложение, согласовать с владельцем)
+## 9. File Operations
 
-- `id3_read` — версия, флаги, все фреймы в декодированном виде. APIC: тип, MIME, размер, sha256, описание, **без** бинарных данных.
-- `id3_set_text` — T***, TXXX, W***, WXXX; параметры `version`, `encoding`.
-- `id3_set_localized` — COMM / USLT с `language`, `descriptor`, `text`.
-- `id3_set_cover` — путь или base64, `picture_type`, `description`.
-- `id3_extract_cover` — сохранить картинку в файл.
-- `id3_remove` — удалить фрейм(ы) по ID / ключу уникальности.
-- `id3_convert_version` — по §8.7, с отчётом о потерях.
-
-Общие требования:
-- У всех изменяющих tools есть `dry_run` (что изменится и какие байтовые фреймы будут записаны). Для read-only tools выставлять аннотацию read-only, для разрушающих — destructive (по спецификации MCP).
-- Ошибки валидации стандарта возвращаются как ошибка tool с указанием раздела спецификации. Паники наружу не выпускать.
+- Tag lookup: first at file start (`ID3`), then footer `3DI` from file end (before ID3v1, if present), SEEK if encountered. If multiple tags are found, act per 2.4 §5; old tag is discarded if new one has no update flag.
+- Write only via temp file in the same folder + `os.Rename`. If new tag fits in old size (frames + padding), do not rewrite audio, change only tag area.
+- Copy audio data as a stream, byte-for-byte. After write: reparse result and ensure SHA-256 of audio region before and after matches.
+- ID3v1 (128 bytes `TAG` at end of file) must not be changed without explicit request.
+- Windows: paths via `filepath`; close files before `os.Rename`; a file opened by another program may fail to rename — return a clear error and do not leave temp file.
+- Paths from MCP calls must be validated (`filepath.Clean`, allowed root directories from config, no escape outside them).
 
 ---
 
-## 11. Тесты
+## 10. MCP: Tool Set (proposal, agree with owner)
 
-- Эталонные байты строить руками по спецификации и сравнивать побайтно (golden, `testdata/`), для каждой версии отдельно.
-- Обязательные кейсы:
-  - Кириллица и CJK: 2.3 → `$01` + BOM; 2.4 → `$03`; отдельно `$02`.
-  - Пустые строки в `$01` (BOM + `$00 00`); multi-string в 2.4; `/`-списки в 2.3.
-  - Unsync: тестовые векторы из §4; тег, заканчивающийся на `$FF`.
+- `id3_read` — version, flags, all frames in decoded form. APIC: type, MIME, size, sha256, description, **no** binary data.
+- `id3_set_text` — T***, TXXX, W***, WXXX; parameters `version`, `encoding`.
+- `id3_set_localized` — COMM / USLT with `language`, `descriptor`, `text`.
+- `id3_set_cover` — path or base64, `picture_type`, `description`.
+- `id3_extract_cover` — save picture to file.
+- `id3_remove` — remove frame(s) by ID / uniqueness key.
+- `id3_convert_version` — per §8.7, with loss report.
+
+General requirements:
+- All mutating tools have `dry_run` (what will change and which byte frames will be written). For read-only tools set read-only annotation, for destructive ones — destructive (per MCP spec).
+- Standard validation errors are returned as tool error with specification section reference. Do not leak panics.
+
+---
+
+## 11. Tests
+
+- Build reference bytes manually by spec and compare byte-for-byte (golden, `testdata/`), separately for each version.
+- Required cases:
+  - Cyrillic and CJK: 2.3 → `$01` + BOM; 2.4 → `$03`; separately `$02`.
+  - Empty strings in `$01` (BOM + `$00 00`); multi-string in 2.4; `/` lists in 2.3.
+  - Unsync: test vectors from §4; tag ending with `$FF`.
   - Extended header, CRC, update, restrictions (2.4); footer; padding.
-  - APIC: PNG и JPEG; несовпадение MIME и сигнатуры; два `$01`; дубликат description; `-->`.
-  - COMM / USLT: несколько языков, дубликат (language, descriptor), неверный код языка.
-  - Усечённый и повреждённый тег; major version выше поддерживаемой; размер выше 256 МБ.
-  - Неизвестные фреймы: сохранение, отбрасывание по tag-alter-preservation.
-  - Конвертация 2.3 ↔ 2.4 по таблице; потери возвращаются списком.
-- Fuzz для парсера: `go test -fuzz=FuzzParseTag -fuzztime=30s ./internal/id3v2`. Парсер не должен паниковать и зависать на любом входе.
-- Внешний оракул (если установлены): `ffprobe -show_format файл.mp3` и Python-библиотека mutagen — читают ли они то, что мы записали. Расхождение разбирать по спецификации, а не подгонять код под оракул.
-- Свойство «аудио не изменилось» (§9) проверять в каждом интеграционном тесте записи.
+  - APIC: PNG and JPEG; MIME/signature mismatch; two `$01`; duplicate description; `-->`.
+  - COMM / USLT: multiple languages, duplicate (language, descriptor), invalid language code.
+  - Truncated and corrupted tag; major version above supported; size above 256 MB.
+  - Unknown frames: preservation, discard by tag-alter-preservation.
+  - 2.3 ↔ 2.4 conversion by table; losses returned as list.
+- Fuzz for parser: `go test -fuzz=FuzzParseTag -fuzztime=30s ./internal/id3v2`. Parser must not panic or hang on any input.
+- External oracle (if installed): `ffprobe -show_format file.mp3` and Python mutagen library — can they read what we wrote. Analyze mismatch by spec, not by adapting code to oracle.
+- "Audio unchanged" property (§9) must be checked in every write integration test.
 
 ---
 
-## 12. Команды (PowerShell)
+## 12. Commands (PowerShell)
 
 ```powershell
 gofmt -l .
@@ -300,27 +306,27 @@ go build ./...
 go test ./...
 ```
 
-`go test -race` требует cgo (на Windows нужен gcc); запускать, если доступен.
+`go test -race` requires cgo (on Windows needs gcc); run if available.
 
 ---
 
-## 13. Как работать агенту
+## 13. How an Agent Should Work
 
-1. Один фрейм или одна возможность за раз. Сначала тест по спецификации, потом код.
-2. Перед правкой открыть нужный раздел в `docs/spec/` и процитировать его номер в комментарии.
-3. Не менять несвязанный код, не добавлять зависимости, не повышать версию Go в `go.mod`.
-4. Любую неоднозначность или пробел в стандарте записывать в `docs/DECISIONS.md` формата «вопрос / что сказано в спецификации (раздел) / варианты / решение владельца» и останавливаться на этом месте.
-5. Задача выполнена, если: `gofmt -l .` пуст, `go vet ./...` и `go test ./...` зелёные, добавлены тесты на новые ветки, в комментариях есть ссылки на разделы спецификации, `docs/DECISIONS.md` обновлён.
+1. One frame or one capability at a time. Write a spec-based test first, then code.
+2. Before editing, open the relevant section in `docs/spec/` and cite its number in a comment.
+3. Do not change unrelated code, do not add dependencies, do not bump Go version in `go.mod`.
+4. Record any ambiguity or gap in the standard in `docs/DECISIONS.md` in format "question / what spec says (section) / options / owner decision" and stop at that point.
+5. Task is done when: `gofmt -l .` is empty, `go vet ./...` and `go test ./...` are green, tests added for new branches, comments contain spec section references, `docs/DECISIONS.md` is updated.
 
 ---
 
-## 14. Открытые решения владельца (пока действуют предложенные значения)
+## 14. Open Owner Decisions (proposed values in effect for now)
 
-- [ ] Версия по умолчанию для нового тега: **2.4** (по требованию «самый новый стандарт»). Некоторые старые плееры лучше понимают 2.3.
-- [ ] Локализованные названия (разные языки в TIT2/TPE1/TALB): стандартного механизма нет (§6). Нужен ли самодельный механизм, и какой?
-- [ ] Поддержка чтения ID3v2.2 (стандарт устарел).
-- [ ] Поведение при символах вне BMP в тегах 2.3: сейчас ошибка (§5.2).
-- [ ] Маппинг IPLS ↔ TIPL / TMCL при конвертации (§8.7).
-- [ ] Чтение Windows-1251 как legacy-режим (§5.5): оставить как опцию или убрать.
-- [ ] Лимит размера обложки и корневые каталоги для файловых операций (§7, §9).
-- [ ] Дополнения CHAP/CTOC и ATXT: нужны ли.
+- [ ] Default version for a new tag: **2.4** (per "newest standard" requirement). Some old players understand 2.3 better.
+- [ ] Localized titles (different languages in TIT2/TPE1/TALB): no standard mechanism (§6). Is a custom mechanism needed, and which one?
+- [ ] Support reading ID3v2.2 (standard is obsolete).
+- [ ] Behavior for characters outside BMP in 2.3 tags: currently error (§5.2).
+- [ ] IPLS ↔ TIPL / TMCL mapping on conversion (§8.7).
+- [ ] Reading Windows-1251 as legacy mode (§5.5): keep as option or remove.
+- [ ] Cover size limit and root directories for file operations (§7, §9).
+- [ ] CHAP/CTOC and ATXT addenda: needed?

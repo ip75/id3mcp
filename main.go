@@ -13,8 +13,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-
-
 // CLI represents command-line interface options.
 type CLI struct {
 	Version bool `kong:"name='version',help='Show version and exit'"`
