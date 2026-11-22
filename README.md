@@ -114,6 +114,17 @@ mcp add id3mcp \
 
 If you built from source or placed the binary elsewhere, use that path in `--command`. On Linux/macOS, use the corresponding binary path, e.g. `~/go/bin/id3mcp`.
 
+## Agent skill
+
+The repo includes an agent skill at [`skills/id3mcp/SKILL.md`](skills/id3mcp/SKILL.md). It teaches an agent when and how to use the `id3mcp` MCP tools safely (preview before writes, batch limits, root jail, ID3 version behavior).
+
+Install/copy it into your skills directory, for example:
+
+```bash
+# Example: copy into a local skills directory
+cp -r skills/id3mcp ~/.agents/skills/id3mcp
+```
+
 ## Supported MCP tools
 
 | Tool | Description | Mutates files |
