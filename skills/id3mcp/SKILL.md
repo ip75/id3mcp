@@ -28,7 +28,7 @@ Use the `id3mcp` MCP server for local MP3 tag operations inside a configured `ID
 - Crush `crushrc`:
 
 ```bash
-mcp add id3mcp --command "C:\\path\\to\\id3mcp.exe" --env ID3MCP_ROOT="C:\\music\\work"
+mcp add id3mcp --command "C:\\path\\to\\id3mcp.exe" --env ID3MCP_ROOT "C:\\music\\work"
 ```
 
 ## Workflow
